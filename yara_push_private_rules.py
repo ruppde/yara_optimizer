@@ -34,12 +34,14 @@ def main():
     parser.add_argument('--verbose', help='Be verbose', action='store_true')
     parser.add_argument('--debug', help='Debug', action='store_true')
     parser.add_argument('--keep-comment', help='Keep comments', action='store_true')
+    parser.add_argument('--nowarning', help='Do not include warning in outfile', action='store_true')
     parser.add_argument("yarfile", help=".yar file")
 
     args = parser.parse_args()
     yarfile = args.yarfile
     verbose = args.verbose
     debug = args.debug
+    nowarning = args.nowarning
 
     parser = plyara.Plyara()
 
@@ -53,6 +55,7 @@ def main():
     print("Parsing yara file: " + yarfile)
 
     outfile = re.sub(r'(\.yara?)', '_no_private_rules\g<1>', yarfile )
+    new_rules = ""
 
     if os.path.exists(outfile) and not args.force:
         print("\nERROR: output file already exists: " + outfile + "   Use --force to overwrite\n")
@@ -62,7 +65,7 @@ def main():
     if args.keep_comment:
         r = re.search(r'/\*.+?\*/', data, re.DOTALL)
         log(r.group(0))
-        yarout.write(r.group(0) + '\n\n')
+        new_rules += (r.group(0) + '\n\n')
         
 
     try:
@@ -77,25 +80,25 @@ def main():
     rule_count = 0
     rule_imports = []
     rule_count_priv = 0
-    new_rules = ""
     for rule in rules_dict:
 
+        # handle imports 
+        if 'imports' in rule:
+            # collect imports to print them in front of final rules output
+            imports = rule['imports']
+            if debug:
+                print("imports: ", imports)
+            for imp in imports:
+                if not imp in rule_imports:
+                    rule_imports.append(imp)
+            # remove for plyara or it would be printed before each rule
+            rule['imports'] = ''
 
         # private rules must be before normal rules referencing them, but that's required in yara anyway
         if 'scopes' in rule and 'private' in rule['scopes']:
             rule_count_priv += 1
             log("doing private rule: "+ rule['rule_name'])
 
-            # handle imports 
-            if 'imports' in rule:
-                # collect imports to print them in front of final rules output
-                imports = rule['imports']
-                print("imports: ", imports)
-                for imp in imports:
-                    if not imp in rule_imports:
-                        rule_imports.append(imp)
-                # remove for plyara or it would be printed before each rule
-                rule['imports'] = ''
 
             if 'strings' in rule:
                 # [1:] to skip first line which only contains "strings:"
@@ -126,15 +129,11 @@ def main():
 
             if not plyara.utils.detect_dependencies(rule):
                 # not priv used, could just use old rule
-                pass
-                # if you change this, move the collection of the imports above outside of the private rules block! see "handle imports"
 
-                # we could just write the rules as they are but this makes checking the converted rules for missing comments more complicated. 
-                # lets wait until this code is good enough to handle all cases
-                #log("START ONEW")
-                #log(plyara.utils.rebuild_yara_rule(rule))
-                #yarout.write(plyara.utils.rebuild_yara_rule(rule) +'\n')
-                #log("END ONEW")
+                log("START ONEW")
+                log(plyara.utils.rebuild_yara_rule(rule))
+                new_rules += (plyara.utils.rebuild_yara_rule(rule) +'\n')
+                log("END ONEW")
             else:
                 # rule which depends on private rules
 
@@ -223,12 +222,12 @@ def main():
             print("Error:", e)
             sys.exit(0)
 
-        yarout.write("// Rules converted using yara_push_private_rules.py")
-        yarout.write("// BEWARE of dropped comments in the rules!!!\n") 
-        yarout.write("// This file just contains the rules, which where dependent on private rules in " + yarfile + "\n\n") 
+        if not nowarning:
+            yarout.write("// Rules converted using yara_push_private_rules.py\n")
+            yarout.write("// BEWARE of dropped comments in the rules!!!\n") 
+        #yarout.write("// This file just contains the rules, which where dependent on private rules in " + yarfile + "\n\n") 
         for imp in rule_imports:
-            yarout.write("import \""+ imp + "\"\n")
-        yarout.write(new_rules)
+            new_rules = "import \""+ imp + "\"\n" + new_rules
 
         # do syntax check using yara-python
         try:
@@ -245,6 +244,7 @@ def main():
             print("Yep, this code doesn't handle duplicate strings. Either change it in the rules or improve this code.")
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n")
 
+        yarout.write(new_rules)
         print("Created new file: " + outfile)
         print("BEWARE: alpha code, check your rules!!")
         print("BEWARE: removes some of the comments!!")
