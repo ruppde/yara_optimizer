@@ -74,6 +74,14 @@ rule webshell_php_generic_tiny
 		
 }
 ```
+
+## Install
+
+Required modules are yara-python and plyara version with https://github.com/plyara/plyara/pull/114 due to a bug before that.
+
+
+No installation is 
+
 ## Usage
 ```bash
 usage: yara_push_private_rules.py [-h] [--force] [--verbose] [--debug]
@@ -96,7 +104,8 @@ optional arguments:
 
 Todo:
 - [ ] Handle anonymous strings ( $ = "" )
-- [ ] Duplicate strings ( $ = "" )
+- [ ] Duplicate strings
+- [ ] Rules nested more than one layer
 
 ## License
 GNU General Public License v3.0
